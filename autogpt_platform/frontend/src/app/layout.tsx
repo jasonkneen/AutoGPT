@@ -34,7 +34,7 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${GeistSans.variable} ${GeistMono.variable} ${poppins.variable} ${inter.variable}`}
+      className={`${poppins.variable} ${GeistSans.variable} ${GeistMono.variable} ${inter.variable}`}
     >
       <body className={cn("antialiased transition-colors", inter.className)}>
         <Providers
@@ -66,7 +66,7 @@ export default async function RootLayout({
                     {
                       icon: IconType.Edit,
                       text: "Edit profile",
-                      href: "/marketplace/profile",
+                      href: "/profile",
                     },
                   ],
                 },
@@ -75,7 +75,7 @@ export default async function RootLayout({
                     {
                       icon: IconType.LayoutDashboard,
                       text: "Creator Dashboard",
-                      href: "/marketplace/dashboard",
+                      href: "/profile/dashboard",
                     },
                     {
                       icon: IconType.UploadCloud,
@@ -88,7 +88,7 @@ export default async function RootLayout({
                     {
                       icon: IconType.Settings,
                       text: "Settings",
-                      href: "/marketplace/settings",
+                      href: "/profile/settings",
                     },
                   ],
                 },
