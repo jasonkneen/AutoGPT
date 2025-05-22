@@ -65,9 +65,9 @@ from backend.integrations.creds_manager import IntegrationCredentialsManager
 from backend.util import json
 from backend.util.decorator import error_logged, time_measured
 from backend.util.file import clean_exec_files
-from backend.util.logging import configure_logging
+from backend.util.logging import TruncatedLogger, configure_logging
 from backend.util.process import AppProcess, set_service_name
-from backend.util.retry import func_retry
+from backend.util.retry import continuous_retry, func_retry
 from backend.util.service import get_service_client
 from backend.util.settings import Settings
 
@@ -86,7 +86,7 @@ utilization_gauge = Gauge(
 )
 
 
-class LogMetadata:
+class LogMetadata(TruncatedLogger):
     def __init__(
         self,
         user_id: str,
@@ -95,8 +95,9 @@ class LogMetadata:
         node_eid: str,
         node_id: str,
         block_name: str,
+        max_length: int = 1000,
     ):
-        self.metadata = {
+        metadata = {
             "component": "ExecutionManager",
             "user_id": user_id,
             "graph_eid": graph_eid,
@@ -105,33 +106,13 @@ class LogMetadata:
             "node_id": node_id,
             "block_name": block_name,
         }
-        self.prefix = f"[ExecutionManager|uid:{user_id}|gid:{graph_id}|nid:{node_id}]|geid:{graph_eid}|neid:{node_eid}|{block_name}]"
-
-    def info(self, msg: str, **extra):
-        msg = self._wrap(msg, **extra)
-        logger.info(msg, extra={"json_fields": {**self.metadata, **extra}})
-
-    def warning(self, msg: str, **extra):
-        msg = self._wrap(msg, **extra)
-        logger.warning(msg, extra={"json_fields": {**self.metadata, **extra}})
-
-    def error(self, msg: str, **extra):
-        msg = self._wrap(msg, **extra)
-        logger.error(msg, extra={"json_fields": {**self.metadata, **extra}})
-
-    def debug(self, msg: str, **extra):
-        msg = self._wrap(msg, **extra)
-        logger.debug(msg, extra={"json_fields": {**self.metadata, **extra}})
-
-    def exception(self, msg: str, **extra):
-        msg = self._wrap(msg, **extra)
-        logger.exception(msg, extra={"json_fields": {**self.metadata, **extra}})
-
-    def _wrap(self, msg: str, **extra):
-        extra_msg = str(extra or "")
-        if len(extra_msg) > 1000:
-            extra_msg = extra_msg[:1000] + "..."
-        return f"{self.prefix} {msg} {extra_msg}"
+        prefix = f"[ExecutionManager|uid:{user_id}|gid:{graph_id}|nid:{node_id}]|geid:{graph_eid}|neid:{node_eid}|{block_name}]"
+        super().__init__(
+            logger,
+            max_length=max_length,
+            prefix=prefix,
+            metadata=metadata,
+        )
 
 
 T = TypeVar("T")
@@ -957,9 +938,6 @@ class ExecutionManager(AppProcess):
         self.pool_size = settings.config.num_graph_workers
         self.running = True
         self.active_graph_runs: dict[str, tuple[Future, threading.Event]] = {}
-        atexit.register(self._on_cleanup)
-        signal.signal(signal.SIGTERM, lambda sig, frame: self._on_sigterm())
-        signal.signal(signal.SIGINT, lambda sig, frame: self._on_sigterm())
 
     def run(self):
         pool_size_gauge.set(self.pool_size)
@@ -985,22 +963,29 @@ class ExecutionManager(AppProcess):
         logger.info(f"[{self.service_name}] ⏳ Connecting to Redis...")
         redis.connect()
 
+        threading.Thread(
+            target=lambda: self._consume_execution_cancel(),
+            daemon=True,
+        ).start()
+
+        self._consume_execution_run()
+
+    @continuous_retry()
+    def _consume_execution_cancel(self):
         cancel_client = SyncRabbitMQ(create_execution_queue_config())
         cancel_client.connect()
         cancel_channel = cancel_client.get_channel()
         logger.info(f"[{self.service_name}] ⏳ Starting cancel message consumer...")
-        threading.Thread(
-            target=lambda: (
-                cancel_channel.basic_consume(
-                    queue=GRAPH_EXECUTION_CANCEL_QUEUE_NAME,
-                    on_message_callback=self._handle_cancel_message,
-                    auto_ack=True,
-                ),
-                cancel_channel.start_consuming(),
-            ),
-            daemon=True,
-        ).start()
+        cancel_channel.basic_consume(
+            queue=GRAPH_EXECUTION_CANCEL_QUEUE_NAME,
+            on_message_callback=self._handle_cancel_message,
+            auto_ack=True,
+        )
+        cancel_channel.start_consuming()
+        raise RuntimeError(f"❌ cancel message consumer is stopped: {cancel_channel}")
 
+    @continuous_retry()
+    def _consume_execution_run(self):
         run_client = SyncRabbitMQ(create_execution_queue_config())
         run_client.connect()
         run_channel = run_client.get_channel()
@@ -1012,6 +997,7 @@ class ExecutionManager(AppProcess):
         )
         logger.info(f"[{self.service_name}] ⏳ Starting to consume run messages...")
         run_channel.start_consuming()
+        raise RuntimeError(f"❌ run message consumer is stopped: {run_channel}")
 
     def _handle_cancel_message(
         self,
@@ -1110,10 +1096,6 @@ class ExecutionManager(AppProcess):
         super().cleanup()
         self._on_cleanup()
 
-    def _on_sigterm(self):
-        llprint(f"[{self.service_name}] ⚠️ GraphExec SIGTERM received")
-        self._on_cleanup(log=llprint)
-
     def _on_cleanup(self, log=logger.info):
         prefix = f"[{self.service_name}][on_graph_executor_stop {os.getpid()}]"
         log(f"{prefix} ⏳ Shutting down service loop...")
@@ -1130,6 +1112,7 @@ class ExecutionManager(AppProcess):
         redis.disconnect()
 
         log(f"{prefix} ✅ Finished GraphExec cleanup")
+        sys.exit(0)
 
 
 # ------- UTILITIES ------- #
