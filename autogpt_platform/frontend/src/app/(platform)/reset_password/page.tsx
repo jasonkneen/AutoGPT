@@ -24,7 +24,7 @@ import { useCallback, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { changePassword, sendResetEmail } from "./actions";
-import Spinner from "@/components/Spinner";
+import LoadingBox from "@/components/ui/loading";
 import { getBehaveAs } from "@/lib/utils";
 import { useTurnstile } from "@/hooks/useTurnstile";
 
@@ -134,7 +134,7 @@ export default function ResetPasswordPage() {
   );
 
   if (isUserLoading) {
-    return <Spinner />;
+    return <LoadingBox className="h-[80vh]" />;
   }
 
   if (!supabase) {
@@ -200,6 +200,7 @@ export default function ResetPasswordPage() {
                 Update password
               </AuthButton>
               <AuthFeedback
+                type="login"
                 message={feedback}
                 isError={isError}
                 behaveAs={getBehaveAs()}
@@ -242,6 +243,7 @@ export default function ResetPasswordPage() {
                 Send reset email
               </AuthButton>
               <AuthFeedback
+                type="login"
                 message={feedback}
                 isError={isError}
                 behaveAs={getBehaveAs()}

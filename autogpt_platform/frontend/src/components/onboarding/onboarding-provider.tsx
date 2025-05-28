@@ -1,4 +1,5 @@
 "use client";
+import useSupabase from "@/hooks/useSupabase";
 import { OnboardingStep, UserOnboarding } from "@/lib/autogpt-server-api";
 import { useBackendAPI } from "@/lib/autogpt-server-api/context";
 import { usePathname, useRouter } from "next/navigation";
@@ -10,6 +11,17 @@ import {
   useEffect,
   useState,
 } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
+import { set } from "lodash";
 
 const OnboardingContext = createContext<
   | {
@@ -20,6 +32,7 @@ const OnboardingContext = createContext<
       step: number;
       setStep: (step: number) => void;
       completeStep: (step: OnboardingStep) => void;
+      incrementRuns: () => void;
     }
   | undefined
 >(undefined);
@@ -40,13 +53,13 @@ export function useOnboarding(step?: number, completeStep?: OnboardingStep) {
     context.updateState({
       completedSteps: [...context.state.completedSteps, completeStep],
     });
-  }, [completeStep, context.state, context.updateState]);
+  }, [completeStep, context, context.updateState]);
 
   useEffect(() => {
     if (step && context.step !== step) {
       context.setStep(step);
     }
-  }, [step, context.step, context.setStep]);
+  }, [step, context]);
 
   return context;
 }
@@ -59,9 +72,11 @@ export default function OnboardingProvider({
   const [state, setState] = useState<UserOnboarding | null>(null);
   // Step is used to control the progress bar, it's frontend only
   const [step, setStep] = useState(1);
+  const [npsDialogOpen, setNpsDialogOpen] = useState(false);
   const api = useBackendAPI();
   const pathname = usePathname();
   const router = useRouter();
+  const { user, isUserLoading } = useSupabase();
 
   useEffect(() => {
     const fetchOnboarding = async () => {
@@ -83,8 +98,11 @@ export default function OnboardingProvider({
         router.push("/marketplace");
       }
     };
+    if (isUserLoading || !user) {
+      return;
+    }
     fetchOnboarding();
-  }, [api, pathname, router]);
+  }, [api, pathname, router, user, isUserLoading]);
 
   const updateState = useCallback(
     (newState: Omit<Partial<UserOnboarding>, "rewardedFor">) => {
@@ -104,6 +122,7 @@ export default function OnboardingProvider({
             selectedStoreListingVersionId: null,
             agentInput: null,
             onboardingAgentExecutionId: null,
+            agentRuns: 0,
             ...newState,
           };
         }
@@ -121,13 +140,53 @@ export default function OnboardingProvider({
         completedSteps: [...state.completedSteps, step],
       });
     },
-    [api, state],
+    [state, updateState],
   );
+
+  const incrementRuns = useCallback(() => {
+    if (!state || state.completedSteps.includes("RUN_AGENTS")) return;
+
+    const finished = state.agentRuns + 1 >= 10;
+    setNpsDialogOpen(finished);
+    updateState({
+      agentRuns: state.agentRuns + 1,
+      ...(finished && {
+        completedSteps: [...state.completedSteps, "RUN_AGENTS"],
+      }),
+    });
+  }, [api, state]);
 
   return (
     <OnboardingContext.Provider
-      value={{ state, updateState, step, setStep, completeStep }}
+      value={{ state, updateState, step, setStep, completeStep, incrementRuns }}
     >
+      <Dialog onOpenChange={setNpsDialogOpen} open={npsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>We&apos;d love your feedback</DialogTitle>
+            <DialogDescription>
+              You&apos;ve run 10 agents — amazing! We&apos;re constantly
+              improving the platform, and your thoughts help shape what we build
+              next. This 1-minute form is just a few quick questions to share
+              how things are going.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setNpsDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Link href="https://tally.so/r/w4El0b" target="_blank">
+              <Button type="button" onClick={() => setNpsDialogOpen(false)}>
+                Give Feedback
+              </Button>
+            </Link>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {children}
     </OnboardingContext.Provider>
   );
