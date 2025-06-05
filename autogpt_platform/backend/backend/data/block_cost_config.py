@@ -2,6 +2,7 @@ from typing import Type
 
 from backend.blocks.ai_music_generator import AIMusicGeneratorBlock
 from backend.blocks.ai_shortform_video_block import AIShortformVideoCreatorBlock
+from backend.blocks.flux_kontext import AIImageEditorBlock, FluxKontextModelName
 from backend.blocks.ideogram import IdeogramModelBlock
 from backend.blocks.jina.embeddings import JinaEmbeddingBlock
 from backend.blocks.jina.search import ExtractWebsiteContentBlock, SearchTheWebBlock
@@ -26,6 +27,7 @@ from backend.integrations.credentials_store import (
     groq_credentials,
     ideogram_credentials,
     jina_credentials,
+    llama_api_credentials,
     open_router_credentials,
     openai_credentials,
     replicate_credentials,
@@ -46,6 +48,8 @@ MODEL_COST: dict[LlmModel, int] = {
     LlmModel.GPT4O: 3,
     LlmModel.GPT4_TURBO: 10,
     LlmModel.GPT3_5_TURBO: 1,
+    LlmModel.CLAUDE_4_OPUS: 21,
+    LlmModel.CLAUDE_4_SONNET: 5,
     LlmModel.CLAUDE_3_7_SONNET: 5,
     LlmModel.CLAUDE_3_5_SONNET: 4,
     LlmModel.CLAUDE_3_5_HAIKU: 1,  # $0.80 / $4.00
@@ -81,6 +85,10 @@ MODEL_COST: dict[LlmModel, int] = {
     LlmModel.GRYPHE_MYTHOMAX_L2_13B: 1,
     LlmModel.META_LLAMA_4_SCOUT: 1,
     LlmModel.META_LLAMA_4_MAVERICK: 1,
+    LlmModel.LLAMA_API_LLAMA_4_SCOUT: 1,
+    LlmModel.LLAMA_API_LLAMA4_MAVERICK: 1,
+    LlmModel.LLAMA_API_LLAMA3_3_8B: 1,
+    LlmModel.LLAMA_API_LLAMA3_3_70B: 1,
 }
 
 for model in LlmModel:
@@ -152,6 +160,23 @@ LLM_COST = (
         )
         for model, cost in MODEL_COST.items()
         if MODEL_METADATA[model].provider == "open_router"
+    ]
+    # Llama API Models
+    + [
+        BlockCost(
+            cost_type=BlockCostType.RUN,
+            cost_filter={
+                "model": model,
+                "credentials": {
+                    "id": llama_api_credentials.id,
+                    "provider": llama_api_credentials.provider,
+                    "type": llama_api_credentials.type,
+                },
+            },
+            cost_amount=cost,
+        )
+        for model, cost in MODEL_COST.items()
+        if MODEL_METADATA[model].provider == "llama_api"
     ]
 )
 
@@ -235,6 +260,30 @@ BLOCK_COSTS: dict[Type[Block], list[BlockCost]] = {
                 }
             },
         )
+    ],
+    AIImageEditorBlock: [
+        BlockCost(
+            cost_amount=10,
+            cost_filter={
+                "model": FluxKontextModelName.PRO.api_name,
+                "credentials": {
+                    "id": replicate_credentials.id,
+                    "provider": replicate_credentials.provider,
+                    "type": replicate_credentials.type,
+                },
+            },
+        ),
+        BlockCost(
+            cost_amount=20,
+            cost_filter={
+                "model": FluxKontextModelName.MAX.api_name,
+                "credentials": {
+                    "id": replicate_credentials.id,
+                    "provider": replicate_credentials.provider,
+                    "type": replicate_credentials.type,
+                },
+            },
+        ),
     ],
     AIMusicGeneratorBlock: [
         BlockCost(

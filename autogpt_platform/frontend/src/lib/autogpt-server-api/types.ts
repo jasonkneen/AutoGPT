@@ -172,6 +172,7 @@ export const PROVIDER_NAMES = {
   OPENAI: "openai",
   OPENWEATHERMAP: "openweathermap",
   OPEN_ROUTER: "open_router",
+  LLAMA_API: "llama_api",
   PINECONE: "pinecone",
   SCREENSHOTONE: "screenshotone",
   SLANT3D: "slant3d",
@@ -843,6 +844,7 @@ export type OnboardingStep =
   | "AGENT_INPUT"
   | "CONGRATS"
   | "GET_RESULTS"
+  | "RUN_AGENTS"
   | "MARKETPLACE_VISIT"
   | "MARKETPLACE_ADD_AGENT"
   | "MARKETPLACE_RUN_AGENT"
@@ -861,6 +863,7 @@ export interface UserOnboarding {
   selectedStoreListingVersionId: string | null;
   agentInput: { [key: string]: string | number } | null;
   onboardingAgentExecutionId: GraphExecutionID | null;
+  agentRuns: number;
 }
 
 /* *** UTILITIES *** */

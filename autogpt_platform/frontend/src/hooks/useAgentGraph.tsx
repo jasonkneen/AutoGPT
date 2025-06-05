@@ -26,7 +26,6 @@ import { InputItem } from "@/components/RunnerUIWrapper";
 import { GraphMeta } from "@/lib/autogpt-server-api";
 import { default as NextLink } from "next/link";
 import { useOnboarding } from "@/components/onboarding/onboarding-provider";
-import { get } from "lodash";
 
 const ajv = new Ajv({ strict: false, allErrors: true });
 
@@ -80,7 +79,7 @@ export default function useAgentGraph(
     useState(false);
   const [nodes, setNodes] = useState<CustomNode[]>([]);
   const [edges, setEdges] = useState<CustomEdge[]>([]);
-  const { state, completeStep } = useOnboarding();
+  const { state, completeStep, incrementRuns } = useOnboarding();
 
   const api = useMemo(
     () => new BackendAPI(process.env.NEXT_PUBLIC_AGPT_SERVER_URL!),
@@ -110,28 +109,50 @@ export default function useAgentGraph(
 
   // Subscribe to execution events
   useEffect(() => {
-    api.onWebSocketMessage("node_execution_event", (data) => {
-      if (data.graph_exec_id != flowExecutionID) {
-        return;
-      }
-      setUpdateQueue((prev) => [...prev, data]);
-    });
+    const deregisterMessageHandler = api.onWebSocketMessage(
+      "node_execution_event",
+      (data) => {
+        if (data.graph_exec_id != flowExecutionID) {
+          return;
+        }
+        setUpdateQueue((prev) => [...prev, data]);
+      },
+    );
 
-    if (flowExecutionID) {
-      api
-        .subscribeToGraphExecution(flowExecutionID)
-        .then(() =>
-          console.debug(
-            `Subscribed to updates for execution #${flowExecutionID}`,
-          ),
-        )
-        .catch((error) =>
-          console.error(
-            `Failed to subscribe to updates for execution #${flowExecutionID}:`,
-            error,
-          ),
-        );
-    }
+    const deregisterConnectHandler =
+      flowID && flowExecutionID
+        ? api.onWebSocketConnect(() => {
+            // Subscribe to execution updates
+            api
+              .subscribeToGraphExecution(flowExecutionID)
+              .then(() =>
+                console.debug(
+                  `Subscribed to updates for execution #${flowExecutionID}`,
+                ),
+              )
+              .catch((error) =>
+                console.error(
+                  `Failed to subscribe to updates for execution #${flowExecutionID}:`,
+                  error,
+                ),
+              );
+
+            // Sync execution info to ensure it's up-to-date after (re)connect
+            api
+              .getGraphExecutionInfo(flowID, flowExecutionID)
+              .then((execution) =>
+                setUpdateQueue((prev) => {
+                  if (!execution.node_executions) return prev;
+                  return [...prev, ...execution.node_executions];
+                }),
+              );
+          })
+        : () => {};
+
+    return () => {
+      deregisterMessageHandler();
+      deregisterConnectHandler();
+    };
   }, [api, flowID, flowVersion, flowExecutionID]);
 
   const getOutputType = useCallback(
@@ -634,7 +655,7 @@ export default function useAgentGraph(
             setSaveRunRequest({ request: "run", state: "error" });
           });
 
-        processedUpdates.current = processedUpdates.current = [];
+        processedUpdates.current = [];
       }
     }
     // Handle stop request
@@ -736,13 +757,14 @@ export default function useAgentGraph(
             // an empty set means the graph has finished running.
             cancelExecListener();
             setSaveRunRequest({ request: "none", state: "none" });
+            incrementRuns();
           }
         },
       );
     };
 
     fetchExecutions();
-  }, [flowID, flowExecutionID]);
+  }, [flowID, flowExecutionID, incrementRuns]);
 
   // Check if node ids are synced with saved agent
   useEffect(() => {
