@@ -16,10 +16,11 @@ from prisma.types import (
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from backend.server.v2.store.exceptions import DatabaseError
+from backend.util.logging import TruncatedLogger
 
 from .db import transaction
 
-logger = logging.getLogger(__name__)
+logger = TruncatedLogger(logging.getLogger(__name__), prefix="[NotificationService]")
 
 
 NotificationDataType_co = TypeVar(
@@ -111,7 +112,14 @@ class BaseSummaryData(BaseNotificationData):
 
 
 class BaseSummaryParams(BaseModel):
-    pass
+    start_date: datetime
+    end_date: datetime
+
+    @field_validator("start_date", "end_date")
+    def validate_timezone(cls, value):
+        if value.tzinfo is None:
+            raise ValueError("datetime must have timezone information")
+        return value
 
 
 class DailySummaryParams(BaseSummaryParams):
@@ -369,7 +377,7 @@ class UserNotificationBatchDTO(BaseModel):
 
 def get_batch_delay(notification_type: NotificationType) -> timedelta:
     return {
-        NotificationType.AGENT_RUN: timedelta(minutes=60),
+        NotificationType.AGENT_RUN: timedelta(days=1),
         NotificationType.ZERO_BALANCE: timedelta(minutes=60),
         NotificationType.LOW_BALANCE: timedelta(minutes=60),
         NotificationType.BLOCK_EXECUTION_FAILED: timedelta(minutes=60),

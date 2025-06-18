@@ -56,6 +56,7 @@ export const providerIcons: Record<
   CredentialsProviderName,
   React.FC<{ className?: string }>
 > = {
+  aiml_api: fallbackIcon,
   anthropic: fallbackIcon,
   apollo: fallbackIcon,
   e2b: fallbackIcon,
@@ -76,6 +77,7 @@ export const providerIcons: Record<
   openai: fallbackIcon,
   openweathermap: fallbackIcon,
   open_router: fallbackIcon,
+  llama_api: fallbackIcon,
   pinecone: fallbackIcon,
   slant3d: fallbackIcon,
   screenshotone: fallbackIcon,
