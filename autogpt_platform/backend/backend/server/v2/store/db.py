@@ -146,11 +146,16 @@ async def get_store_agent_details(
                 f"Agent {username}/{agent_name} not found"
             )
 
+        profile = await prisma.models.Profile.prisma().find_first(
+            where={"username": username}
+        )
+        user_id = profile.userId if profile else None
+
         # Retrieve StoreListing to get active_version_id and has_approved_version
         store_listing = await prisma.models.StoreListing.prisma().find_first(
             where=prisma.types.StoreListingWhereInput(
                 slug=agent_name,
-                owningUserId=username,  # Direct equality check instead of 'has'
+                owningUserId=user_id or "",
             ),
             include={"ActiveVersion": True},
         )
@@ -967,7 +972,7 @@ async def get_my_agents(
 
         library_agents = await prisma.models.LibraryAgent.prisma().find_many(
             where=search_filter,
-            order=[{"agentGraphVersion": "desc"}],
+            order=[{"updatedAt": "desc"}],
             skip=(page - 1) * page_size,
             take=page_size,
             include={"AgentGraph": True},
